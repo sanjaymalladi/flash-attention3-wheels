@@ -10,15 +10,11 @@ PYTORCH_WHL_INDEX = "https://download.pytorch.org/whl/torch/"
 
 
 def get_latest_cuda_patches_for_ubuntu2204() -> dict[str, str]:
-    """
-    Return mapping like {"12.8": "12.8.1", "12.9": "12.9.0"} by scanning
-    nvidia/cuda tags that match: <major>.<minor>.<patch>-devel-ubuntu22.04
-    """
     tag_re = re.compile(r"^(\d+)\.(\d+)\.(\d+)-devel-ubuntu22\.04$")
     url = DOCKER_TAGS_API
     params = {"page_size": 100, "name": "ubuntu22.04"}
 
-    latest_patch: dict[str, int] = {}  # key: "major.minor" -> max patch int
+    latest_patch: dict[str, int] = {}
 
     while url:
         resp = requests.get(url, params=params).json()
@@ -36,19 +32,11 @@ def get_latest_cuda_patches_for_ubuntu2204() -> dict[str, str]:
 
 
 def get_target_versions(target: str) -> tuple[list[str], list[str]]:
-    """Return (cuda_versions, torch_versions) for a given target platform."""
-    target = (target or "linux").lower()
-
-    if target == "windows":
-        cuda_versions = ["12.8", "13.0"]
-        torch_versions = ["2.8.0", "2.10.0"]
-    elif target == "arm":
-        cuda_versions = ["12.8", "13.0"]
-        torch_versions = ["2.8.0", "2.10.0"]
-    else:
-        cuda_versions = ["12.8", "13.0"]
-        torch_versions = ["2.8.0", "2.10.0"]
-
+    """
+    Force YOUR config here
+    """
+    cuda_versions = ["12.8"]
+    torch_versions = ["2.11.0"]
     return cuda_versions, torch_versions
 
 
@@ -59,12 +47,10 @@ def fetch_html(url: str) -> str:
 
 
 def extract_wheel_names(html: str) -> list[str]:
-    # The page is a simple directory index; links contain *.whl.
     return re.findall(r"torch-[^>%]*\.whl", html)
 
 
 def platform_bucket(filename: str) -> str | None:
-    # Example: torch-2.2.2+cu121-cp310-cp310-linux_x86_64.whl
     if filename.endswith("_x86_64.whl"):
         return "linux"
     if filename.endswith("_aarch64.whl") or filename.endswith("_arm64.whl"):
@@ -75,10 +61,6 @@ def platform_bucket(filename: str) -> str | None:
 
 
 def parse_torch_version_and_cuda(filename: str) -> tuple[str, str] | None:
-    """
-    Extract torch version and CUDA tag (+cu118/+cu121/+cu124/...).
-    Keep only cp310 wheels with CUDA builds; exclude +cpu.
-    """
     if "-cp310-" not in filename or "+cu" not in filename or "+cpu" in filename:
         return None
 
@@ -89,10 +71,6 @@ def parse_torch_version_and_cuda(filename: str) -> tuple[str, str] | None:
 
 
 def build_pytorch_cuda_table() -> dict[str, dict[str, set[str]]]:
-    """
-    Build table: platform -> torch_version -> {cuda_versions}
-    Only keep torch >= 2.8.0 and cuda >= 12.6.
-    """
     html = fetch_html(PYTORCH_WHL_INDEX)
     wheels = extract_wheel_names(html)
 
@@ -142,13 +120,20 @@ def main() -> None:
 
     for cuda in cuda_versions:
         cuda = cuda.strip()
-        assert cuda in cuda_full_map
+
+        if cuda not in cuda_full_map:
+            raise ValueError(f"CUDA {cuda} not found in Docker tags")
+
         cuda_full = cuda_full_map[cuda]
 
         for torch in torch_versions:
             torch = torch.strip()
-            if cuda not in target_filter[torch]:
-                continue
+
+            # 🔥 Allow unsupported combos (your 2.11 case)
+            if torch in target_filter:
+                if cuda not in target_filter[torch]:
+                    continue
+
             matrix["include"].append(
                 {"cuda": cuda, "cuda_full": cuda_full, "torch": torch}
             )
